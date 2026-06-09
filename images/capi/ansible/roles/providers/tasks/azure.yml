@@ -12,6 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ---
+# The Canonical Ubuntu 26.04 (resolute) Azure Marketplace image ships a legacy
+# Microsoft "prod" apt source pinned to ubuntu/18.04 whose signing key is not in
+# the keyring. Ubuntu 26.04 removed apt-key and enforces signed-by, so the first
+# `apt update` of the build fails with:
+#   NO_PUBKEY EB3E94ADBE1229CF ... 'https://packages.microsoft.com/ubuntu/18.04/prod
+#   bionic InRelease' is not signed
+# image-builder does not rely on this repo for node images (azure-cli is only
+# installed when debug_tools is set, from its own signed-by repo), so drop the
+# stale source before any apt cache update. No-op on images that don't ship it.
+- name: Find stale Microsoft prod apt sources shipped on the base image
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns:
+      - "*.list"
+      - "*.sources"
+    contains: ".*packages\\.microsoft\\.com/ubuntu/18\\.04.*"
+  register: stale_ms_apt_sources
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Remove stale Microsoft prod apt sources shipped on the base image
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ stale_ms_apt_sources.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: ansible_facts['os_family'] == "Debian"
+
 - name: Import Azure CLI tasks
   ansible.builtin.import_tasks: azurecli.yml
   when: debug_tools | bool
